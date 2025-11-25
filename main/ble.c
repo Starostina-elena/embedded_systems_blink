@@ -12,6 +12,7 @@
 
 static const char *TAG = "ble_mod";
 static ble_read_cb_t g_read_cb = NULL;
+static bool g_ble_synced = false;
 
 // Simple custom 16-bit service/char UUIDs (private)
 #define BLE_SVC_UUID 0xA000
@@ -58,10 +59,22 @@ static void ble_app_on_sync(void)
         return;
     }
 
-    ble_gatts_count_cfg(gatt_svr_svcs);
-    ble_gatts_add_svcs(gatt_svr_svcs);
+    rc = ble_gatts_count_cfg(gatt_svr_svcs);
+    if (rc) {
+        ESP_LOGE(TAG, "ble_gatts_count_cfg failed %d", rc);
+    } else {
+        ESP_LOGI(TAG, "ble_gatts_count_cfg OK");
+    }
+
+    rc = ble_gatts_add_svcs(gatt_svr_svcs);
+    if (rc) {
+        ESP_LOGE(TAG, "ble_gatts_add_svcs failed %d", rc);
+    } else {
+        ESP_LOGI(TAG, "GATT services added");
+    }
 
     ESP_LOGI(TAG, "BLE stack synced");
+    g_ble_synced = true;
 }
 
 static int ble_gap_event(struct ble_gap_event *event, void *arg)
@@ -134,11 +147,28 @@ esp_err_t ble_start_advertising(void)
     adv_params.conn_mode = BLE_GAP_CONN_MODE_UND; // connectable
     adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
 
+    if (!g_ble_synced) {
+        ESP_LOGW(TAG, "BLE not synced yet; cannot start advertising");
+        return ESP_ERR_INVALID_STATE;
+    }
+
     uint8_t addr_type;
     rc = ble_hs_id_infer_auto(0, &addr_type);
     if (rc) {
         ESP_LOGE(TAG, "ble_hs_id_infer_auto failed %d", rc);
         return ESP_FAIL;
+    }
+
+    ESP_LOGI(TAG, "Using addr_type=%u for advertising", (unsigned)addr_type);
+
+    /* Stop any existing advertising first (ignore errors) */
+    int rc_stop = ble_gap_adv_stop();
+    if (rc_stop == 0) {
+        ESP_LOGI(TAG, "Stopped previous advertising");
+    } else if (rc_stop == BLE_HS_EALREADY) {
+        /* nothing running */
+    } else {
+        ESP_LOGW(TAG, "ble_gap_adv_stop returned %d", rc_stop);
     }
 
     rc = ble_gap_adv_start(addr_type, NULL, BLE_HS_FOREVER,

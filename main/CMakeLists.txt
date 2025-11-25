@@ -28,4 +28,4 @@ if(NOT EXTRA_INCLUDES)
 endif()
 
 idf_component_register(SRCS "ble.c" "main.c" "led.c" "button.c" "hx711.c" INCLUDE_DIRS "include" ${EXTRA_INCLUDES}
-					   REQUIRES bt driver esp_timer esp_driver_gpio)
+					   REQUIRES bt driver esp_timer esp_driver_gpio nvs_flash)

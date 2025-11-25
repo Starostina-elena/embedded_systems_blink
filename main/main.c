@@ -2,6 +2,8 @@
 #include "freertos/task.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
+#include "nvs_flash.h"
+#include "esp_err.h"
 
 #include "led.h"
 #include "button.h"
@@ -84,9 +86,9 @@ static void sensor_task(void *arg)
 
     while (1) {
         for (size_t i = 0; i < hx711_count(); ++i) {
-            int32_t raw = hx711_read_raw(i);
-            float weight = hx711_get_weight(i);
-            ESP_LOGI(TAG, "Sensor %d: raw=%ld weight=%.2fg", (int)i, (long)raw, weight);
+            //int32_t raw = hx711_read_raw(i);
+            //float weight = hx711_get_weight(i);
+            // ESP_LOGI(TAG, "Sensor %d: raw=%ld weight=%.2fg", (int)i, (long)raw, weight);
         }
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
@@ -94,6 +96,14 @@ static void sensor_task(void *arg)
 
 void app_main(void)
 {
+    // initialize NVS (required before starting BT/WiFi)
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(ret);
+
     // init modules
     led_init(LED_PINS, 4);
     button_init(BUTTON_PINS, 4, on_button_event);

@@ -11,5 +11,9 @@ typedef enum {
 
 typedef void (*button_cb_t)(size_t index, button_event_t event);
 
+// Initialize buttons. Default behavior (button_init) assumes active-low wiring (pressed = 0).
+// Use `button_init_ex` to specify `active_low = false` for active-high buttons.
+#include <stdbool.h>
+esp_err_t button_init_ex(const gpio_num_t *pins, size_t count, button_cb_t cb, bool active_low);
 esp_err_t button_init(const gpio_num_t *pins, size_t count, button_cb_t cb);
 esp_err_t button_deinit(void);
