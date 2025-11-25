@@ -13,7 +13,8 @@
 #include <string.h>
 
 // Default pin configuration: change to match your board/wiring
-static const gpio_num_t LED_PINS[4] = { GPIO_NUM_2, GPIO_NUM_15, GPIO_NUM_16, GPIO_NUM_17 };
+// Default LED pins — choose GPIOs that are not used by HX711 or buttons
+static const gpio_num_t LED_PINS[4] = { GPIO_NUM_32, GPIO_NUM_33, GPIO_NUM_16, GPIO_NUM_17 };
 static const gpio_num_t BUTTON_PINS[4] = { GPIO_NUM_13, GPIO_NUM_12, GPIO_NUM_14, GPIO_NUM_27 };
 // HX711 DT and SCK pins (per sensor). Change these to match your wiring.
 static const gpio_num_t HX711_DT[4]  = { GPIO_NUM_5, GPIO_NUM_18, GPIO_NUM_19, GPIO_NUM_21 };
@@ -94,6 +95,49 @@ static void sensor_task(void *arg)
     }
 }
 
+static void led_test_task(void *arg)
+{
+    (void)arg;
+    ESP_LOGI(TAG, "led_test_task started (blinking LED_PINS[0] then LED_PINS[1])");
+    while (1) {
+        // Blink first LED with read-back logging
+        ESP_LOGI(TAG, "GPIO%d HIGH (request)", LED_PINS[0]);
+        gpio_set_level(LED_PINS[0], 1);
+        vTaskDelay(pdMS_TO_TICKS(50));
+        {
+            int rb = gpio_get_level(LED_PINS[0]);
+            ESP_LOGI(TAG, "GPIO%d read after set=1 -> %d", LED_PINS[0], rb);
+        }
+        vTaskDelay(pdMS_TO_TICKS(150));
+        ESP_LOGI(TAG, "GPIO%d LOW (request)", LED_PINS[0]);
+        gpio_set_level(LED_PINS[0], 0);
+        vTaskDelay(pdMS_TO_TICKS(50));
+        {
+            int rb = gpio_get_level(LED_PINS[0]);
+            ESP_LOGI(TAG, "GPIO%d read after set=0 -> %d", LED_PINS[0], rb);
+        }
+        vTaskDelay(pdMS_TO_TICKS(150));
+
+        // Blink second LED with read-back
+        ESP_LOGI(TAG, "GPIO%d HIGH (request)", LED_PINS[1]);
+        gpio_set_level(LED_PINS[1], 1);
+        vTaskDelay(pdMS_TO_TICKS(50));
+        {
+            int rb = gpio_get_level(LED_PINS[1]);
+            ESP_LOGI(TAG, "GPIO%d read after set=1 -> %d", LED_PINS[1], rb);
+        }
+        vTaskDelay(pdMS_TO_TICKS(150));
+        ESP_LOGI(TAG, "GPIO%d LOW (request)", LED_PINS[1]);
+        gpio_set_level(LED_PINS[1], 0);
+        vTaskDelay(pdMS_TO_TICKS(50));
+        {
+            int rb = gpio_get_level(LED_PINS[1]);
+            ESP_LOGI(TAG, "GPIO%d read after set=0 -> %d", LED_PINS[1], rb);
+        }
+        vTaskDelay(pdMS_TO_TICKS(150));
+    }
+}
+
 void app_main(void)
 {
     // initialize NVS (required before starting BT/WiFi)
@@ -106,6 +150,17 @@ void app_main(void)
 
     // init modules
     led_init(LED_PINS, 4);
+    // Ensure default active-high logic for LEDs during tests
+    led_set_active_low(false);
+    // Quick startup self-test for LED pins: set, dump, toggle
+    ESP_LOGI(TAG, "Performing LED startup self-test");
+    led_dump();
+    led_set(0, 1);
+    vTaskDelay(pdMS_TO_TICKS(500));
+    led_dump();
+    led_set(0, 0);
+    vTaskDelay(pdMS_TO_TICKS(200));
+    led_dump();
     button_init(BUTTON_PINS, 4, on_button_event);
     hx711_init(HX711_DT, HX711_SCK, 4);
     ble_init(ble_record_read_cb);
@@ -115,6 +170,9 @@ void app_main(void)
 
     // start sensor reader
     xTaskCreate(sensor_task, "sensor_task", 4096, NULL, 5, NULL);
+
+    // Simple LED verify task: toggle LED0 every 2s to test control independent of button
+    xTaskCreate(led_test_task, "led_test", 2048, NULL, 5, NULL);
 
     ESP_LOGI(TAG, "Application initialized");
 }
