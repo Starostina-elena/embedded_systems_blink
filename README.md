@@ -17,7 +17,7 @@ idf.py -p /dev/tty.usbserial-XXXX flash monitor
 ```
 
 Аппаратная разводка (по-умолчанию)
-- LED pins (по-умолчанию): `GPIO_NUM_2`, `GPIO_NUM_15`, `GPIO_NUM_16`, `GPIO_NUM_17`.
+- LED pins (по-умолчанию): `GPIO_NUM_32`, `GPIO_NUM_15`, `GPIO_NUM_16`, `GPIO_NUM_17`.
 - Button pins (по-умолчанию): `GPIO_NUM_13`, `GPIO_NUM_12`, `GPIO_NUM_14`, `GPIO_NUM_27`.
 - HX711 DT pins (по-умолчанию): `GPIO_NUM_5`, `GPIO_NUM_18`, `GPIO_NUM_19`, `GPIO_NUM_21`.
 - HX711 SCK pins (по-умолчанию): `GPIO_NUM_4`, `GPIO_NUM_23`, `GPIO_NUM_22`, `GPIO_NUM_25`.

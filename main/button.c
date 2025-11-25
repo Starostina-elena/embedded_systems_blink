@@ -111,8 +111,11 @@ esp_err_t button_init_ex(const gpio_num_t *pins, size_t count, button_cb_t cb, b
     // configure pins
     uint64_t mask = 0;
     for (size_t i = 0; i < count; ++i) mask |= (1ULL << btn_pins[i]);
+    // Use any-edge interrupts so we debounce and detect both press and release
+    // (previously only one edge was configured which prevented cancelling
+    // the long-press timer on release in some wiring/configs).
     gpio_config_t io_conf = {
-        .intr_type = (g_active_low ? GPIO_INTR_NEGEDGE : GPIO_INTR_POSEDGE),
+        .intr_type = GPIO_INTR_ANYEDGE,
         .mode = GPIO_MODE_INPUT,
         .pin_bit_mask = mask,
         .pull_down_en = (g_active_low ? 0 : 1),

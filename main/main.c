@@ -12,6 +12,9 @@
 #include "esp_timer.h"
 #include <string.h>
 
+
+#define WEIGHT_DECREASE_THRESHOLD 2.0f  // настройте под ваш датчик
+
 // Default pin configuration: change to match your board/wiring
 // Default LED pins — choose GPIOs that are not used by HX711 or buttons
 static const gpio_num_t LED_PINS[4] = { GPIO_NUM_32, GPIO_NUM_33, GPIO_NUM_16, GPIO_NUM_17 };
@@ -42,9 +45,9 @@ static void record_event(uint8_t val)
 static void on_button_event(size_t idx, button_event_t event)
 {
     if (event == BUTTON_EVENT_PRESS) {
-        ESP_LOGI(TAG, "Button %d press", (int)idx);
-        // toggle LED on press
-        led_toggle(idx);
+        ESP_LOGI(TAG, "Button %d press -> turn LED%d OFF", (int)idx, (int)idx);
+        // turn off LED on short press
+        led_set(idx, 0);
         record_event((uint8_t)idx);
     } else if (event == BUTTON_EVENT_LONG_PRESS) {
         ESP_LOGI(TAG, "Button %d long-press -> start pairing", (int)idx);
@@ -80,63 +83,47 @@ static size_t ble_record_read_cb(uint8_t *buf, size_t maxlen)
 static void sensor_task(void *arg)
 {
     ESP_LOGI(TAG, "Sensor task started");
-    // perform taring for each sensor
+
+    // Выполняем тарировку (обнуление)
     for (size_t i = 0; i < hx711_count(); ++i) {
-        hx711_tare(i, 20);
+        ESP_LOGI(TAG, "Taring sensor %d...", (int)i);
+        hx711_tare(i, 20);  // 20 измерений для усреднения
     }
+
+    // Храним предыдущие значения веса (по умолчанию — 0)
+    float prev_weights[4] = {0};
 
     while (1) {
         for (size_t i = 0; i < hx711_count(); ++i) {
-            //int32_t raw = hx711_read_raw(i);
-            //float weight = hx711_get_weight(i);
-            // ESP_LOGI(TAG, "Sensor %d: raw=%ld weight=%.2fg", (int)i, (long)raw, weight);
+            float weight = hx711_get_weight(i);  // вес в калиброванных единицах (например, граммах)
+
+            // Проверяем, уменьшился ли вес по сравнению с предыдущим
+            if (prev_weights[i] - weight >= WEIGHT_DECREASE_THRESHOLD) {
+                ESP_LOGI(TAG, "Sensor %d: weight decreased from %.2f to %.2f (Δ = %.2f) → LED ON", 
+                         (int)i, prev_weights[i], weight, prev_weights[i] - weight);
+
+                // Загорается светодиод №0 (можете выбрать любой: i, или фиксированный)
+                led_set(0, 1);  // включить LED[0]
+                ESP_LOGI(TAG, "LED 0 turned ON due to weight decrease on sensor %d", (int)i);
+                
+                // *(опционально)* Через 2 секунды погасить:
+                // vTaskDelay(pdMS_TO_TICKS(2000));
+                // led_set(0, 0);
+            }
+
+            // Обновляем предыдущее значение
+            prev_weights[i] = weight;
+
+            // Лог только при отладке (можете закомментировать)
+            ESP_LOGI(TAG, "Sensor %d: %.2f g", (int)i, weight);
         }
-        vTaskDelay(pdMS_TO_TICKS(1000));
+
+        vTaskDelay(pdMS_TO_TICKS(500));  // опрос каждые 500 мс (настройте под задачу)
     }
 }
 
-static void led_test_task(void *arg)
-{
-    (void)arg;
-    ESP_LOGI(TAG, "led_test_task started (blinking LED_PINS[0] then LED_PINS[1])");
-    while (1) {
-        // Blink first LED with read-back logging
-        ESP_LOGI(TAG, "GPIO%d HIGH (request)", LED_PINS[0]);
-        gpio_set_level(LED_PINS[0], 1);
-        vTaskDelay(pdMS_TO_TICKS(50));
-        {
-            int rb = gpio_get_level(LED_PINS[0]);
-            ESP_LOGI(TAG, "GPIO%d read after set=1 -> %d", LED_PINS[0], rb);
-        }
-        vTaskDelay(pdMS_TO_TICKS(150));
-        ESP_LOGI(TAG, "GPIO%d LOW (request)", LED_PINS[0]);
-        gpio_set_level(LED_PINS[0], 0);
-        vTaskDelay(pdMS_TO_TICKS(50));
-        {
-            int rb = gpio_get_level(LED_PINS[0]);
-            ESP_LOGI(TAG, "GPIO%d read after set=0 -> %d", LED_PINS[0], rb);
-        }
-        vTaskDelay(pdMS_TO_TICKS(150));
-
-        // Blink second LED with read-back
-        ESP_LOGI(TAG, "GPIO%d HIGH (request)", LED_PINS[1]);
-        gpio_set_level(LED_PINS[1], 1);
-        vTaskDelay(pdMS_TO_TICKS(50));
-        {
-            int rb = gpio_get_level(LED_PINS[1]);
-            ESP_LOGI(TAG, "GPIO%d read after set=1 -> %d", LED_PINS[1], rb);
-        }
-        vTaskDelay(pdMS_TO_TICKS(150));
-        ESP_LOGI(TAG, "GPIO%d LOW (request)", LED_PINS[1]);
-        gpio_set_level(LED_PINS[1], 0);
-        vTaskDelay(pdMS_TO_TICKS(50));
-        {
-            int rb = gpio_get_level(LED_PINS[1]);
-            ESP_LOGI(TAG, "GPIO%d read after set=0 -> %d", LED_PINS[1], rb);
-        }
-        vTaskDelay(pdMS_TO_TICKS(150));
-    }
-}
+/* led_test_task removed — behavior simplified: LED0 set on at startup,
+   short button press turns it off. */
 
 void app_main(void)
 {
@@ -150,17 +137,9 @@ void app_main(void)
 
     // init modules
     led_init(LED_PINS, 4);
-    // Ensure default active-high logic for LEDs during tests
+    // Ensure default active-high logic for LEDs during tests and turn LED0 on
     led_set_active_low(false);
-    // Quick startup self-test for LED pins: set, dump, toggle
-    ESP_LOGI(TAG, "Performing LED startup self-test");
-    led_dump();
     led_set(0, 1);
-    vTaskDelay(pdMS_TO_TICKS(500));
-    led_dump();
-    led_set(0, 0);
-    vTaskDelay(pdMS_TO_TICKS(200));
-    led_dump();
     button_init(BUTTON_PINS, 4, on_button_event);
     hx711_init(HX711_DT, HX711_SCK, 4);
     ble_init(ble_record_read_cb);
@@ -171,8 +150,7 @@ void app_main(void)
     // start sensor reader
     xTaskCreate(sensor_task, "sensor_task", 4096, NULL, 5, NULL);
 
-    // Simple LED verify task: toggle LED0 every 2s to test control independent of button
-    xTaskCreate(led_test_task, "led_test", 2048, NULL, 5, NULL);
+    // LED test task removed — LED behaviour is controlled by button and startup state
 
     ESP_LOGI(TAG, "Application initialized");
 }
