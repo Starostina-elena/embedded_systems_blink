@@ -1,1 +1,31 @@
-idf_component_register(SRCS "main.c" "led.c" "button.c" "hx711.c" INCLUDE_DIRS "include")
+idf_component_get_property(BT_DIR bt COMPONENT_DIR)
+
+set(EXTRA_INCLUDES "")
+if(BT_DIR)
+	file(GLOB_RECURSE _NIMBLE_PORT_HEADERS "${BT_DIR}/*/nimble_port.h")
+	file(GLOB_RECURSE _OS_MBUF_HEADERS "${BT_DIR}/*/os_mbuf.h")
+	set(_found_headers ${_NIMBLE_PORT_HEADERS} ${_OS_MBUF_HEADERS})
+	foreach(_h IN LISTS _found_headers)
+		get_filename_component(_dir "${_h}" DIRECTORY)
+		list(APPEND EXTRA_INCLUDES "${_dir}")
+	endforeach()
+	list(REMOVE_DUPLICATES EXTRA_INCLUDES)
+endif()
+
+# Fallback: if headers were not found above, try common locations under IDF_PATH/components/bt
+if(NOT EXTRA_INCLUDES)
+	if(DEFINED ENV{IDF_PATH})
+		set(_idf_root $ENV{IDF_PATH})
+		set(_cand1 "${_idf_root}/components/bt/host/nimble/nimble/porting/nimble/include")
+		set(_cand2 "${_idf_root}/components/bt/porting/include")
+		if(EXISTS "${_cand1}")
+			list(APPEND EXTRA_INCLUDES "${_cand1}")
+		endif()
+		if(EXISTS "${_cand2}")
+			list(APPEND EXTRA_INCLUDES "${_cand2}")
+		endif()
+	endif()
+endif()
+
+idf_component_register(SRCS "ble.c" "main.c" "led.c" "button.c" "hx711.c" INCLUDE_DIRS "include" ${EXTRA_INCLUDES}
+					   REQUIRES bt driver esp_timer esp_driver_gpio)

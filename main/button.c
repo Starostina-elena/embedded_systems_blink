@@ -12,6 +12,7 @@ static const char *TAG = "button_mod";
 static gpio_num_t *btn_pins = NULL;
 static size_t btn_count = 0;
 static TimerHandle_t *btn_timers = NULL;
+static TimerHandle_t *btn_long_timers = NULL;
 static button_cb_t user_cb = NULL;
 
 // Debounce timer callback runs in timer/daemon task context
@@ -22,10 +23,27 @@ static void btn_timer_cb(TimerHandle_t xTimer)
     int level = gpio_get_level(btn_pins[idx]);
     if (level == 0) { // pressed (assuming pull-up)
         ESP_LOGI(TAG, "Button %u pressed (debounced)", idx);
-        if (user_cb) user_cb(idx);
+        // start long-press timer
+        if (btn_long_timers && btn_long_timers[idx]) {
+            xTimerStart(btn_long_timers[idx], 0);
+        }
+        if (user_cb) user_cb(idx, BUTTON_EVENT_PRESS);
     } else {
-        ESP_LOGI(TAG, "Button %u bounce ignored, level=%d", idx, level);
+        ESP_LOGI(TAG, "Button %u released (debounced), level=%d", idx, level);
+        // cancel long-press if running
+        if (btn_long_timers && btn_long_timers[idx]) {
+            xTimerStop(btn_long_timers[idx], 0);
+        }
+        if (user_cb) user_cb(idx, BUTTON_EVENT_RELEASE);
     }
+}
+
+// long-press timer callback
+static void btn_long_timer_cb(TimerHandle_t xTimer)
+{
+    size_t idx = (size_t)(uintptr_t)pvTimerGetTimerID(xTimer);
+    ESP_LOGI(TAG, "Button %u long-press detected", idx);
+    if (user_cb) user_cb(idx, BUTTON_EVENT_LONG_PRESS);
 }
 
 // ISR: restart debounce timer for the button index
@@ -86,6 +104,35 @@ esp_err_t button_init(const gpio_num_t *pins, size_t count, button_cb_t cb)
         gpio_isr_handler_add(btn_pins[i], isr_handler, (void *)(uintptr_t)i);
     }
 
+    // Create long-press timers (5 seconds)
+    btn_long_timers = malloc(sizeof(TimerHandle_t) * count);
+    if (!btn_long_timers) return ESP_ERR_NO_MEM;
+    for (size_t i = 0; i < count; ++i) {
+        char lname[32];
+        snprintf(lname, sizeof(lname), "btn_long_%zu", i);
+        btn_long_timers[i] = xTimerCreate(lname, pdMS_TO_TICKS(5000), pdFALSE, (void *)(uintptr_t)i, btn_long_timer_cb);
+        if (!btn_long_timers[i]) {
+            for (size_t j = 0; j < i; ++j) xTimerDelete(btn_long_timers[j], 0);
+            free(btn_long_timers);
+            btn_long_timers = NULL;
+            return ESP_ERR_NO_MEM;
+        }
+    }
+
     ESP_LOGI(TAG, "Button module initialized (%d buttons)", (int)count);
+    return ESP_OK;
+}
+
+esp_err_t button_deinit(void)
+{
+    if (!btn_pins) return ESP_ERR_INVALID_STATE;
+    for (size_t i = 0; i < btn_count; ++i) {
+        gpio_isr_handler_remove(btn_pins[i]);
+        if (btn_timers && btn_timers[i]) xTimerDelete(btn_timers[i], 0);
+        if (btn_long_timers && btn_long_timers[i]) xTimerDelete(btn_long_timers[i], 0);
+    }
+    if (btn_timers) { free(btn_timers); btn_timers = NULL; }
+    if (btn_long_timers) { free(btn_long_timers); btn_long_timers = NULL; }
+    free(btn_pins); btn_pins = NULL; btn_count = 0; user_cb = NULL;
     return ESP_OK;
 }
