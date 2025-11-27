@@ -4,6 +4,9 @@
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "esp_err.h"
+#include "esp_sntp.h"
+#include <sys/time.h>
+
 
 #include "led.h"
 #include "button.h"
@@ -13,22 +16,33 @@
 #include <string.h>
 
 
-#define WEIGHT_DECREASE_THRESHOLD 2.0f  // настройте под ваш датчик
+#define WEIGHT_DECREASE_THRESHOLD 2.0f 
 
-// Default pin configuration: change to match your board/wiring
-// Default LED pins — choose GPIOs that are not used by HX711 or buttons
 static const gpio_num_t LED_PINS[4] = { GPIO_NUM_32, GPIO_NUM_33, GPIO_NUM_16, GPIO_NUM_17 };
 static const gpio_num_t BUTTON_PINS[4] = { GPIO_NUM_13, GPIO_NUM_12, GPIO_NUM_14, GPIO_NUM_27 };
-// HX711 DT and SCK pins (per sensor). Change these to match your wiring.
 static const gpio_num_t HX711_DT[4]  = { GPIO_NUM_5, GPIO_NUM_18, GPIO_NUM_19, GPIO_NUM_21 };
 static const gpio_num_t HX711_SCK[4] = { GPIO_NUM_4, GPIO_NUM_23, GPIO_NUM_22, GPIO_NUM_25 };
 
 static const char *TAG = "app";
 
-// Event record: timestamp (ms) + value (0..3)
+void initialize_sntp(void)
+{
+    ESP_LOGI(TAG, "Initializing SNTP");
+    esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
+    esp_sntp_setservername(0, "pool.ntp.org");
+    esp_sntp_init();
+}
+
+uint64_t get_epoch_ms(void)
+{
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return (uint64_t)tv.tv_sec * 1000ULL + (uint64_t)(tv.tv_usec / 1000ULL);
+}
+
 typedef struct {
-    uint32_t ts_ms;
-    uint8_t val; // 0..3
+    uint64_t ts_ms;
+    uint8_t val;
 } record_t;
 
 static record_t records[64];
@@ -36,7 +50,12 @@ static size_t records_head = 0;
 
 static void record_event(uint8_t val)
 {
-    uint32_t ts = (uint32_t)(esp_timer_get_time() / 1000);
+    uint64_t ts;
+    if (esp_sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED) {
+        ts = get_epoch_ms();
+    } else {
+        ts = (uint64_t)(esp_timer_get_time() / 1000);
+    }
     records[records_head].ts_ms = ts;
     records[records_head].val = val & 0x3;
     records_head = (records_head + 1) % (sizeof(records)/sizeof(records[0]));
@@ -66,12 +85,17 @@ static size_t ble_record_read_cb(uint8_t *buf, size_t maxlen)
     for (size_t i = 0; i < count; ++i) {
         record_t *r = &records[i];
         if (r->ts_ms == 0) continue;
-        if (pos + 5 > maxlen) break;
-        uint32_t t = r->ts_ms;
+        // each record: 8 bytes timestamp (little-endian) + 1 byte value
+        if (pos + 9 > maxlen) break;
+        uint64_t t = r->ts_ms;
         buf[pos++] = (uint8_t)(t & 0xFF);
         buf[pos++] = (uint8_t)((t >> 8) & 0xFF);
         buf[pos++] = (uint8_t)((t >> 16) & 0xFF);
         buf[pos++] = (uint8_t)((t >> 24) & 0xFF);
+        buf[pos++] = (uint8_t)((t >> 32) & 0xFF);
+        buf[pos++] = (uint8_t)((t >> 40) & 0xFF);
+        buf[pos++] = (uint8_t)((t >> 48) & 0xFF);
+        buf[pos++] = (uint8_t)((t >> 56) & 0xFF);
         buf[pos++] = r->val;
         send_count++;
     }
@@ -127,6 +151,17 @@ static void sensor_task(void *arg)
 
 void app_main(void)
 {
+    initialize_sntp();
+    int retry = 0;
+    const int retry_count = 10;
+    while (esp_sntp_get_sync_status() != SNTP_SYNC_STATUS_COMPLETED && ++retry < retry_count) {
+        ESP_LOGI(TAG, "Waiting for SNTP sync...");
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+    if (esp_sntp_get_sync_status() != SNTP_SYNC_STATUS_COMPLETED) {
+        ESP_LOGW(TAG, "SNTP sync failed - time not set");
+    }
+
     // initialize NVS (required before starting BT/WiFi)
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {

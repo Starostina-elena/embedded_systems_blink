@@ -17,7 +17,7 @@ idf.py flash
 ```
 
 Аппаратная разводка
-- LED pins: `GPIO_NUM_32`, `GPIO_NUM_15`, `GPIO_NUM_16`, `GPIO_NUM_17`.
+- LED pins: `GPIO_NUM_32`, `GPIO_NUM_33`, `GPIO_NUM_16`, `GPIO_NUM_17`.
 - Button pins: `GPIO_NUM_13`, `GPIO_NUM_12`, `GPIO_NUM_14`, `GPIO_NUM_27`.
 - HX711 DT pins: `GPIO_NUM_5`, `GPIO_NUM_18`, `GPIO_NUM_19`, `GPIO_NUM_21`.
 - HX711 SCK pins: `GPIO_NUM_4`, `GPIO_NUM_23`, `GPIO_NUM_22`, `GPIO_NUM_25`.
