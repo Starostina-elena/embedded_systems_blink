@@ -65,12 +65,9 @@ static void on_button_event(size_t idx, button_event_t event)
 {
     if (event == BUTTON_EVENT_PRESS) {
         ESP_LOGI(TAG, "Button %d press -> turn LED%d OFF", (int)idx, (int)idx);
-        // turn off LED on short press
         led_set(idx, 0);
-        record_event((uint8_t)idx);
     } else if (event == BUTTON_EVENT_LONG_PRESS) {
         ESP_LOGI(TAG, "Button %d long-press -> start pairing", (int)idx);
-        // start BLE advertising; client will read the GATT characteristic to receive records
         ble_start_advertising();
     }
 }
@@ -114,40 +111,27 @@ static void sensor_task(void *arg)
         hx711_tare(i, 20);  // 20 измерений для усреднения
     }
 
-    // Храним предыдущие значения веса (по умолчанию — 0)
     float prev_weights[4] = {0};
 
     while (1) {
         for (size_t i = 0; i < hx711_count(); ++i) {
-            float weight = hx711_get_weight(i);  // вес в калиброванных единицах (например, граммах)
+            float weight = hx711_get_weight(i);  // вес в калиброванных единицах 
 
-            // Проверяем, уменьшился ли вес по сравнению с предыдущим
             if (prev_weights[i] - weight >= WEIGHT_DECREASE_THRESHOLD) {
                 ESP_LOGI(TAG, "Sensor %d: weight decreased from %.2f to %.2f (Δ = %.2f) → LED ON", 
                          (int)i, prev_weights[i], weight, prev_weights[i] - weight);
 
-                // Загорается светодиод №0 (можете выбрать любой: i, или фиксированный)
-                led_set(0, 1);  // включить LED[0]
-                ESP_LOGI(TAG, "LED 0 turned ON due to weight decrease on sensor %d", (int)i);
-                
-                // *(опционально)* Через 2 секунды погасить:
-                // vTaskDelay(pdMS_TO_TICKS(2000));
-                // led_set(0, 0);
+                led_set(i, 1); 
+                record_event((uint8_t)i);
+                ESP_LOGI(TAG, "LED %d turned ON due to weight decrease on sensor %d", (int)i, (int)i);
             }
-
-            // Обновляем предыдущее значение
             prev_weights[i] = weight;
-
-            // Лог только при отладке (можете закомментировать)
             ESP_LOGI(TAG, "Sensor %d: %.2f g", (int)i, weight);
         }
 
-        vTaskDelay(pdMS_TO_TICKS(500));  // опрос каждые 500 мс (настройте под задачу)
+        vTaskDelay(pdMS_TO_TICKS(500));
     }
 }
-
-/* led_test_task removed — behavior simplified: LED0 set on at startup,
-   short button press turns it off. */
 
 void app_main(void)
 {
