@@ -133,8 +133,9 @@ static void sensor_task(void *arg)
     }
 }
 
-void app_main(void)
-{
+void app_main(void) {
+
+    // initialize epoche time
     initialize_sntp();
     int retry = 0;
     const int retry_count = 10;
@@ -156,9 +157,7 @@ void app_main(void)
 
     // init modules
     led_init(LED_PINS, 4);
-    // Ensure default active-high logic for LEDs during tests and turn LED0 on
     led_set_active_low(false);
-    led_set(0, 1);
     button_init(BUTTON_PINS, 4, on_button_event);
     hx711_init(HX711_DT, HX711_SCK, 4);
     ble_init(ble_record_read_cb);
@@ -168,8 +167,6 @@ void app_main(void)
 
     // start sensor reader
     xTaskCreate(sensor_task, "sensor_task", 4096, NULL, 5, NULL);
-
-    // LED test task removed — LED behaviour is controlled by button and startup state
-
+    
     ESP_LOGI(TAG, "Application initialized");
 }

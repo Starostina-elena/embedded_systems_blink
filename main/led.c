@@ -23,7 +23,6 @@ esp_err_t led_init(const gpio_num_t *pins, size_t count)
         gpio_set_level(led_pins[i], 0);
     }
     led_count = count;
-    // Print configured pins for easier debugging
     ESP_LOGI(TAG, "LED module initialized (%d LEDs)", (int)count);
     {
         char buf[128];
