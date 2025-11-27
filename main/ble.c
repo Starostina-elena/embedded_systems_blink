@@ -132,10 +132,17 @@ esp_err_t ble_start_advertising(void)
 
     memset(&fields, 0, sizeof(fields));
     fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
-    const char *name = "PILL_DEVICE";
+    const char *name = "PILL_BOX_DEVICE";
     fields.name = (uint8_t *)name;
     fields.name_len = strlen(name);
     fields.name_is_complete = 1;
+    
+        {
+            static const ble_uuid16_t uuids16[] = { BLE_UUID16_INIT(BLE_SVC_UUID) };
+            fields.uuids16 = uuids16;
+            fields.num_uuids16 = 1;
+            fields.uuids16_is_complete = 1;
+        }
 
     rc = ble_gap_adv_set_fields(&fields);
     if (rc) {
